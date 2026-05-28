@@ -1,6 +1,6 @@
 # chiseled-application-template
 
-Canonical framework-template for **Ubuntu Chiseled application-image** repositories: repos that build minimal, hardened OCI images with `chisel cut` and emit supply-chain evidence on every build.
+Canonical framework-template for **Ubuntu Chiseled application-image** repositories: repos that build minimal, hardened OCI images with `chisel cut`, with opt-in supply-chain evidence (SBOM, build provenance, cosign signature).
 
 [![CI](https://github.com/NWarila/chiseled-application-template/actions/workflows/ci.yaml/badge.svg)](https://github.com/NWarila/chiseled-application-template/actions/workflows/ci.yaml)
 [![Security](https://github.com/NWarila/chiseled-application-template/actions/workflows/security.yaml/badge.svg)](https://github.com/NWarila/chiseled-application-template/actions/workflows/security.yaml)
@@ -16,7 +16,7 @@ The result is a deliberately small attack surface:
 - **No shell, no package manager, no unused libraries** - only the slices the app declares.
 - **Distroless and non-root by construction** - the runtime hardening checks fail the build if the image regresses.
 
-On top of the minimal image, every build emits four pieces of **supply-chain evidence**, so the artifact is not just small but *provable*:
+Every build runs the runtime-hardening checks (below); with evidence enabled (`emit_evidence`, plus signing for the cosign signature), the build also emits **supply-chain evidence**, so the artifact is not just small but *provable*:
 
 | Evidence | Tool | What it proves |
 | --- | --- | --- |
