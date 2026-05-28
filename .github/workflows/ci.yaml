@@ -99,6 +99,181 @@ jobs:
       push: false
       sign: false
 
+  evidence-build:
+    name: evidence self-test (build + push + sign)
+    # End-to-end exercise of the supply-chain evidence layer. Calls the same
+    # reusable build workflow with emit_evidence/push/sign all true, pushing to
+    # an EPHEMERAL GHCR ref (a CI-only package distinct from the consumer-facing
+    # ghcr.io/nwarila/chiseled-hello documented in examples/hello/inputs.yaml).
+    # The job-scoped GITHUB_TOKEN (packages: write) can push under the
+    # repository owner's GHCR namespace. The evidence-verify job below pulls the
+    # reusable's outputs and verifies SBOM + provenance + cosign, then deletes
+    # the ephemeral package version.
+    #
+    # The reference build uses app_artifact empty (pure chiseled rootfs): the
+    # evidence layer is orthogonal to whether an app binary is layered in, and
+    # the app-binary path is already covered by reference-image-selftest. What
+    # this proves is that a real pushed manifest gets a valid SBOM, a verifiable
+    # provenance attestation, and a verifiable keyless cosign signature.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      packages: write
+    uses: ./.github/workflows/reusable-chiseled-image-build.yaml
+    with:
+      ubuntu_release: "24.04"
+      chisel_release: "ubuntu-24.04"
+      slices: |
+        base-files_base
+        ca-certificates_data
+      image_name: ghcr.io/nwarila/chiseled-application-template-ci
+      image_tag: ${{ github.sha }}
+      run_user: "65532"
+      push: true
+      sign: true
+      emit_evidence: true
+
+  evidence-verify:
+    name: evidence self-test (verify + cleanup)
+    needs: evidence-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # gh attestation verify reads attestations attached to the OCI subject.
+      attestations: read
+      # Pull the pushed image / its referrers and delete the ephemeral version.
+      packages: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      PINNED_REF: ${{ needs.evidence-build.outputs.image_pinned_ref }}
+      IMAGE_DIGEST: ${{ needs.evidence-build.outputs.image_digest }}
+      # Keep in lockstep with examples/hello/inputs.yaml's owner namespace.
+      PACKAGE_NAME: chiseled-application-template-ci
+      OWNER: nwarila
+    steps:
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" \
+            | docker login ghcr.io --username "${GHCR_USER}" --password-stdin
+
+      - name: Sanity-check reusable outputs
+        run: |
+          set -euo pipefail
+          echo "pinned ref: '${PINNED_REF}'"
+          echo "digest:     '${IMAGE_DIGEST}'"
+          if [ -z "${PINNED_REF}" ] || [ -z "${IMAGE_DIGEST}" ]; then
+            echo "::error::reusable did not surface a pushed registry digest" >&2
+            exit 1
+          fi
+          case "${IMAGE_DIGEST}" in
+            sha256:*) ;;
+            *) echo "::error::digest is not a sha256:... manifest digest" >&2; exit 1 ;;
+          esac
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: image-sbom-spdx-json
+
+      - name: Verify SBOM is valid SPDX-JSON of the built image
+        run: |
+          set -euo pipefail
+          # Validate structure with jq and assert the document is SPDX (not just
+          # any JSON) and references at least one package, i.e. a real SBOM.
+          test -s image.spdx.json
+          jq -e '.spdxVersion | startswith("SPDX-")' image.spdx.json >/dev/null
+          jq -e '.SPDXID == "SPDXRef-DOCUMENT"' image.spdx.json >/dev/null
+          pkgs="$(jq '.packages | length' image.spdx.json)"
+          echo "SBOM SPDX version: $(jq -r .spdxVersion image.spdx.json)"
+          echo "SBOM package count: ${pkgs}"
+          if [ "${pkgs}" -lt 1 ]; then
+            echo "::error::SBOM has no packages; not a usable SBOM" >&2
+            exit 1
+          fi
+          # The SBOM names the image we scanned (the digest pin).
+          if ! grep -q "${IMAGE_DIGEST#sha256:}" image.spdx.json; then
+            echo "::warning::SBOM does not embed the manifest digest string; \
+              continuing (syft records the source ref it was given)."
+          fi
+          echo "OK: SBOM is a valid SPDX-JSON document with packages"
+
+      - name: Verify build-provenance attestation (gh attestation)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Verifies the SLSA provenance attestation attached as an OCI referrer
+          # of the pushed manifest digest, scoped to this repository owner.
+          gh attestation verify "oci://${PINNED_REF}" --owner NWarila
+
+      - name: Install cosign (pinned)
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      - name: Verify cosign keyless signature
+        run: |
+          set -euo pipefail
+          # The signature was minted from this workflow's OIDC identity. Pin the
+          # verification to the Actions OIDC issuer and to a certificate identity
+          # under this repo, so an unrelated signature cannot satisfy it.
+          cosign verify \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            --certificate-identity-regexp "^https://github.com/NWarila/chiseled-application-template/" \
+            "${PINNED_REF}"
+          echo "OK: cosign keyless signature verifies"
+
+      - name: Clean up ephemeral GHCR package version
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Delete only the version this run pushed so ephemeral CI images do not
+          # accumulate. Look up the version id by the manifest digest. Best
+          # effort: a failure here must not fail the self-test.
+          digest="${IMAGE_DIGEST}"
+          [ -n "${digest}" ] || { echo "no digest; nothing to clean up"; exit 0; }
+
+          # The provenance + signature push additional referrer/sig manifests as
+          # separate versions; delete every version tagged for this SHA plus the
+          # primary digest version. Enumerate versions and match by digest name
+          # or by the github.sha tag.
+          api="users/${OWNER}/packages/container/${PACKAGE_NAME}/versions"
+          if ! versions_json="$(gh api --paginate "${api}" 2>/dev/null)"; then
+            echo "::warning::could not list package versions (perms?); skipping cleanup"
+            exit 0
+          fi
+
+          sha_tag="${GITHUB_SHA}"
+          ids="$(printf '%s' "${versions_json}" | jq -r --arg d "${digest}" --arg t "${sha_tag}" '
+            .[]
+            | select(
+                (.name == $d)
+                or ((.metadata.container.tags // []) | index($t))
+                or ((.metadata.container.tags // []) | length == 0)
+              )
+            | .id
+          ' || true)"
+
+          if [ -z "${ids}" ]; then
+            echo "no matching ephemeral versions found to delete"
+            exit 0
+          fi
+
+          for id in ${ids}; do
+            echo "deleting package version id ${id}"
+            gh api -X DELETE "users/${OWNER}/packages/container/${PACKAGE_NAME}/versions/${id}" \
+              || echo "::warning::failed to delete version ${id} (best effort)"
+          done
+          echo "ephemeral cleanup complete"
+
   reference-image-selftest:
     name: reference image self-test
     # Full end-to-end self-test: compile the credential-free reference app,

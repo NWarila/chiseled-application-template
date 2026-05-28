@@ -90,8 +90,19 @@ on:
 
     outputs:
       image_digest:
-        description: The built image digest (sha256:...) once the build is wired.
+        description: |
+          The built image digest (sha256:...). When inputs.push is true this is
+          the registry MANIFEST digest computed on push (the subject of the
+          provenance attestation and cosign signature); otherwise it is
+          buildah's local image id.
         value: ${{ jobs.build.outputs.image_digest }}
+      image_pinned_ref:
+        description: |
+          The pushed image pinned to its registry digest
+          (image_name@sha256:...), empty when inputs.push is false. This is the
+          exact, immutable subject that the SBOM, provenance attestation, and
+          cosign signature all target.
+        value: ${{ jobs.build.outputs.image_pinned_ref }}
 
 permissions:
   contents: read
@@ -110,6 +121,7 @@ jobs:
       packages: write
     outputs:
       image_digest: ${{ steps.build_image.outputs.image_digest }}
+      image_pinned_ref: ${{ steps.build_image.outputs.image_pinned_ref }}
     defaults:
       run:
         shell: bash
@@ -192,10 +204,30 @@ jobs:
           echo "rootfs contents (top levels):"
           find rootfs -maxdepth 2 | sort
 
+      - name: Log in to GHCR
+        # Only needed when pushing. The job-scoped GITHUB_TOKEN has
+        # packages: write (declared above), so it can push to any GHCR repo
+        # under the workflow's owner. Gated on inputs.push so the local-only
+        # reference build never touches the registry or needs credentials.
+        #
+        # Use `docker login` so the credential lands in ~/.docker/config.json:
+        # buildah reads that file too, and (critically) so do the Node-based
+        # attest-build-provenance action and cosign, which need registry
+        # credentials to push the attestation referrer and the signature.
+        if: ${{ inputs.push }}
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" \
+            | docker login ghcr.io --username "${GHCR_USER}" --password-stdin
+
       - name: Assemble OCI image
         id: build_image
         env:
           IMAGE_REF: ${{ steps.params.outputs.image_ref }}
+          IMAGE_NAME: ${{ inputs.image_name }}
           APP_ARTIFACT: ${{ inputs.app_artifact }}
           ENTRYPOINT: ${{ inputs.entrypoint }}
           RUN_USER: ${{ inputs.run_user }}
@@ -227,63 +259,123 @@ jobs:
           image_id="$(cat "${iidfile}")"
           rm -f "${iidfile}"
 
-          # Normalise to a sha256:... reference for downstream evidence steps.
-          digest="${image_id}"
-          case "${digest}" in
+          # Normalise the LOCAL image id to a sha256:... reference. This is
+          # buildah's local storage id, used only for local hardening inspection
+          # and the dormant non-push evidence path.
+          local_digest="${image_id}"
+          case "${local_digest}" in
             sha256:*) ;;
-            *) digest="sha256:${digest}" ;;
+            *) local_digest="sha256:${local_digest}" ;;
           esac
-          echo "image_digest=${digest}" >> "${GITHUB_OUTPUT}"
-          echo "Built ${IMAGE_REF} (${digest})"
+          echo "Built ${IMAGE_REF} (local id ${local_digest})"
 
           # Push is gated on inputs.push; the reference build is local-only.
+          #
+          # Provenance attestation + cosign sign + a registry-resolvable SBOM
+          # all operate on the REGISTRY MANIFEST DIGEST, which is computed by
+          # the registry on push and differs from buildah's local image id.
+          # Capture it with --digestfile and surface it as the canonical
+          # image_digest output so every downstream evidence step pins the same
+          # immutable, registry-resolvable subject.
           if [ "${PUSH}" = "true" ]; then
-            buildah push "${IMAGE_REF}"
+            digestfile="$(mktemp)"
+            buildah push --digestfile "${digestfile}" \
+              "${IMAGE_REF}" "docker://${IMAGE_REF}"
+            pushed_digest="$(cat "${digestfile}")"
+            rm -f "${digestfile}"
+            case "${pushed_digest}" in
+              sha256:*) ;;
+              *) pushed_digest="sha256:${pushed_digest}" ;;
+            esac
+            echo "Pushed ${IMAGE_REF} -> registry digest ${pushed_digest}"
+            echo "image_digest=${pushed_digest}" >> "${GITHUB_OUTPUT}"
+            echo "image_pinned_ref=${IMAGE_NAME}@${pushed_digest}" >> "${GITHUB_OUTPUT}"
           else
             echo "push disabled: image kept in local buildah storage only"
+            # No registry digest exists; expose the local id so the dormant
+            # evidence gate (emit_evidence && image_digest != '') can still key
+            # off it, while attest/cosign stay gated on inputs.push.
+            echo "image_digest=${local_digest}" >> "${GITHUB_OUTPUT}"
+            echo "image_pinned_ref=" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Resolve SBOM target
+        # The SBOM is taken of the BUILT image. When the image was pushed, point
+        # syft at the registry manifest pin (image_name@<registry-digest>) so it
+        # scans the exact immutable artifact that was attested and signed. When
+        # evidence is requested without a push, scan the image out of buildah's
+        # local containers-storage instead.
+        id: sbom_target
+        if: ${{ inputs.emit_evidence && steps.build_image.outputs.image_digest != '' }}
+        env:
+          PINNED_REF: ${{ steps.build_image.outputs.image_pinned_ref }}
+          LOCAL_REF: ${{ steps.params.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          if [ -n "${PINNED_REF}" ]; then
+            echo "ref=${PINNED_REF}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "ref=containers-storage:${LOCAL_REF}" >> "${GITHUB_OUTPUT}"
           fi
 
       - name: Generate SBOM (syft)
-        # Deferred to the evidence PR: gated on inputs.emit_evidence (default
-        # false) AND a real digest. The core build + reference self-test do not
-        # emit evidence, so this stays dormant and the reference build stays
-        # green. This action is SHA-pinned.
+        # Gated on inputs.emit_evidence (default false) AND a real digest. The
+        # core build + reference self-test do not emit evidence, so this stays
+        # dormant and the reference build stays green. This action is SHA-pinned.
         if: ${{ inputs.emit_evidence && steps.build_image.outputs.image_digest != '' }}
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          image: ${{ steps.params.outputs.image_ref }}
+          image: ${{ steps.sbom_target.outputs.ref }}
           format: spdx-json
           output-file: image.spdx.json
           upload-artifact: false
 
-      - name: Attest build provenance
-        # Deferred to the evidence PR: gated on inputs.emit_evidence (default
-        # false) AND a real digest. Requires id-token: write and
-        # attestations: write (declared above). Attesting a not-yet-pushed image
-        # is intentionally out of scope for the core-build PR.
+      - name: Upload SBOM artifact
         if: ${{ inputs.emit_evidence && steps.build_image.outputs.image_digest != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-sbom-spdx-json
+          path: image.spdx.json
+          if-no-files-found: error
+
+      - name: Attest build provenance
+        # Gated on inputs.emit_evidence (default false) AND a real registry
+        # digest from a push. attest-build-provenance signs SLSA provenance for
+        # the registry manifest digest and (push-to-registry) attaches it as an
+        # OCI referrer of that digest, so it is verifiable with
+        # `gh attestation verify oci://<image>@<digest>`. Requires id-token:
+        # write and attestations: write (declared above). Skipped without a
+        # push because there is no registry-resolvable subject to attach to.
+        if: ${{ inputs.emit_evidence && inputs.push && steps.build_image.outputs.image_digest != '' }}
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ inputs.image_name }}
           subject-digest: ${{ steps.build_image.outputs.image_digest }}
-          push-to-registry: ${{ inputs.push }}
+          push-to-registry: true
 
       - name: Install cosign (pinned)
-        # TODO(iterate): wire the sign step below to use cosign. Installer is
-        # SHA-pinned; Renovate manages the pin. Only runs when signing a pushed
-        # image is requested.
+        # Installer is SHA-pinned; Renovate manages the pin. Only runs when
+        # signing a pushed image is requested.
         if: ${{ inputs.sign && inputs.push }}
         uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
 
       - name: Sign image (cosign keyless)
         if: ${{ inputs.sign && inputs.push }}
         env:
-          IMAGE_DIGEST: ${{ steps.build_image.outputs.image_digest }}
+          PINNED_REF: ${{ steps.build_image.outputs.image_pinned_ref }}
         run: |
           set -euo pipefail
-          # TODO(iterate): cosign sign --yes "${IMAGE_DIGEST}" using keyless
-          # OIDC (Fulcio/Rekor). Requires id-token: write.
-          echo "TODO(iterate): cosign sign (keyless) ${IMAGE_DIGEST:-<digest>}"
+          # Keyless signing over the registry manifest digest. cosign mints a
+          # short-lived Fulcio cert from the Actions OIDC token (id-token: write)
+          # and records the signature in the Rekor transparency log. Signing the
+          # digest pin (image_name@sha256:...) - not a mutable tag - binds the
+          # signature to the exact attested manifest.
+          if [ -z "${PINNED_REF}" ]; then
+            echo "::error::sign requested but no pushed registry digest available" >&2
+            exit 1
+          fi
+          echo "cosign sign (keyless) ${PINNED_REF}"
+          cosign sign --yes "${PINNED_REF}"
 
       - name: Runtime-hardening checks
         env:
