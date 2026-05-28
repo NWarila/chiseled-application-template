@@ -12,9 +12,9 @@
 #   - Exceptions require an ADR or a documented rationale on the
 #     consuming PR.
 #
-# SCAFFOLD STATUS: the `consumer` content_rules below describe the intended
-# consumer surface. The reference build that exercises them end-to-end is wired
-# across follow-up iterate PRs.
+# The `consumer` content_rules below describe the consumer surface. The
+# reference build that exercises them end-to-end is wired and validated in CI
+# (reference image self-test + evidence self-test in ci.yaml).
 version: '2'
 universal:
   required_root_files:
@@ -112,10 +112,8 @@ types:
     rationale: 'Self-validation shape for this type-template repository. It owns the
       reusable chiseled image build workflow, the consumer contract, drift-gate
       metadata, and the supply-chain evidence pipeline that downstream consumers
-      inherit.
-
-      SCAFFOLD STATUS: required_paths reflects what this PR lands. The working
-      chisel cut build and full evidence wiring arrive across iterate PRs.'
+      inherit. The working chisel cut build and full evidence wiring (SBOM,
+      provenance, cosign signature, hardening) are shipped and validated in CI.'
     required_paths:
     - path: baseline-manifest.json
       rationale: Template-tier drift-gate manifest consumed by downstream consumers.
@@ -130,7 +128,7 @@ types:
     - path: .github/workflows/reusable-release-evidence.yaml
       rationale: Reusable release-evidence workflow consumed at release time.
     - path: examples/
-      rationale: Credential-free reference app the template self-tests once the build is wired.
+      rationale: Credential-free reference app the template self-tests on every CI run.
       type: directory
 workflow_pinning:
   enforce_sha_pin: true

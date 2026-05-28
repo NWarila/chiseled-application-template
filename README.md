@@ -1,6 +1,6 @@
 # chiseled-application-template
 
-Canonical framework-template for **Ubuntu Chiseled application-image** repositories: repos that build minimal, hardened OCI images with `chisel cut` and emit supply-chain evidence on every build.
+Canonical framework-template for **Ubuntu Chiseled application-image** repositories: repos that build minimal, hardened OCI images with `chisel cut`, with opt-in supply-chain evidence (SBOM, build provenance, cosign signature).
 
 [![CI](https://github.com/NWarila/chiseled-application-template/actions/workflows/ci.yaml/badge.svg)](https://github.com/NWarila/chiseled-application-template/actions/workflows/ci.yaml)
 [![Security](https://github.com/NWarila/chiseled-application-template/actions/workflows/security.yaml/badge.svg)](https://github.com/NWarila/chiseled-application-template/actions/workflows/security.yaml)
@@ -16,7 +16,7 @@ The result is a deliberately small attack surface:
 - **No shell, no package manager, no unused libraries** - only the slices the app declares.
 - **Distroless and non-root by construction** - the runtime hardening checks fail the build if the image regresses.
 
-On top of the minimal image, every build emits four pieces of **supply-chain evidence**, so the artifact is not just small but *provable*:
+Every build runs the runtime-hardening checks (below); with evidence enabled (`emit_evidence`, plus signing for the cosign signature), the build also emits **supply-chain evidence**, so the artifact is not just small but *provable*:
 
 | Evidence | Tool | What it proves |
 | --- | --- | --- |
@@ -59,7 +59,7 @@ The consumer surface (inputs + required caller workflows) is defined machine-rea
 ## Build engine and status
 
 - **Build engine:** Canonical `chisel cut` (upstream `chisel` binary + Ubuntu slice definitions) -> minimal rootfs -> OCI image.
-- **Status:** This repository currently lands the **complete standard scaffold + a documented skeleton reusable build workflow**. The working `chisel cut` build and full evidence wiring (SBOM, provenance, signing, hardening) are landing across follow-up *iterate* PRs and are marked in-source with `# TODO(iterate):`. See [`examples/hello/README.md`](examples/hello/README.md) for the credential-free reference build the template will self-test once the build is wired.
+- **Status:** Shipped and validated in CI. The reusable build workflow performs a real `chisel cut`, assembles the OCI image with buildah, and emits the full v1 supply-chain evidence bundle (SBOM via syft, SLSA build-provenance attestation, cosign keyless signature) plus runtime-hardening checks (non-root, no shell, distroless). CI self-tests exercise the live pipeline end to end: `reference image self-test` (credential-free local build), `evidence self-test (build + push + sign)`, and `evidence self-test (verify + cleanup)`. See [`examples/hello/README.md`](examples/hello/README.md) for the credential-free reference build the template self-tests on every run.
 
 ## Documentation
 

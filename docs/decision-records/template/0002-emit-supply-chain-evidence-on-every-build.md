@@ -70,11 +70,15 @@ every build.
 
 ## Confirmation
 
-1. `reusable-chiseled-image-build.yaml` contains SBOM, provenance, signing, and
-   hardening steps. (# TODO(iterate): wire each step to the real image digest.)
+1. `reusable-chiseled-image-build.yaml` implements the SBOM, provenance,
+   signing, and hardening steps, each keyed off the registry manifest digest of
+   the built image; the CI evidence self-test verifies SBOM + provenance +
+   cosign end to end.
 2. Hardening checks fail the build on a non-root/shell/non-distroless
    regression.
-3. Signing runs when an image is pushed; provenance and SBOM run on every build.
+3. The SBOM and provenance attestation are emitted for the pushed image digest
+   (gated on `emit_evidence`), and cosign signing runs when the image is pushed
+   and `sign` is set.
 
 ## Consequences
 
@@ -107,8 +111,11 @@ None (current).
 
 ## Implementing PRs
 
-- Initial scaffold: documented skeleton steps for all four evidence types,
-  each marked `# TODO(iterate):` until wired to the real image build.
+- The initial repository structure established the evidence-step shape for all
+  four evidence types.
+- Each evidence step (SBOM, build-provenance attestation, cosign signature,
+  runtime-hardening checks) was then wired to the real built-image digest and is
+  verified by the CI evidence self-test.
 
 ## Related ADRs
 

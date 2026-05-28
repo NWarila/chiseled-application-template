@@ -5,7 +5,7 @@
  * binary so the only thing under test is the template's chisel-cut build and
  * supply-chain evidence pipeline, not any real application.
  *
- * Build (deferred until the pipeline is wired):
+ * Build (run by the reference image self-test in CI):
  *   cc -static -Os -o hello hello.c
  */
 #include <unistd.h>
