@@ -72,21 +72,155 @@ jobs:
             .github/workflows/
 
   reference-image-build:
-    name: reference image build (placeholder)
-    # TODO(iterate): exercise the reusable build workflow end-to-end against the
-    # credential-free reference app under examples/hello/ once chisel cut + the
-    # evidence pipeline are wired. This self-tests the template the same way a
-    # consumer would call it. For now it is a documented placeholder so CI is
-    # green and the intent is recorded.
+    name: reference image build (reusable)
+    # Exercises the reusable build workflow in-repo against the reference
+    # inputs from examples/hello/inputs.yaml. This proves the consumer-facing
+    # contract (pinned chisel install -> chisel cut -> OCI assembly ->
+    # runtime-hardening checks) the same way a consumer repo calls it. The
+    # reference app artifact is compiled and the produced image is run/asserted
+    # in the reference-image-selftest job below (a `uses:` job cannot carry the
+    # build artifact or run/assert steps), so this call sets app_artifact empty
+    # and proves the build engine and hardening gate on the pure chiseled rootfs.
+    # push:false (local/CI-only), sign:false, emit_evidence default false.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      packages: write
+    uses: ./.github/workflows/reusable-chiseled-image-build.yaml
+    with:
+      ubuntu_release: "24.04"
+      chisel_release: "ubuntu-24.04"
+      slices: |
+        base-files_base
+        ca-certificates_data
+      image_name: ghcr.io/nwarila/chiseled-hello
+      run_user: "65532"
+      push: false
+      sign: false
+
+  reference-image-selftest:
+    name: reference image self-test
+    # Full end-to-end self-test: compile the credential-free reference app,
+    # build the chiseled image from examples/hello/inputs.yaml with the same
+    # build engine the reusable uses (pinned chisel + buildah FROM scratch),
+    # then RUN the image and assert it prints the expected line, and confirm the
+    # runtime-hardening asserts hold (non-root, no shell, distroless).
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Keep in lockstep with the reusable workflow's pin.
+      # renovate: datasource=github-releases depName=canonical/chisel
+      CHISEL_VERSION: "1.4.1"
+      CHISEL_RELEASE: "ubuntu-24.04"
+      APP_ARTIFACT: examples/hello/hello
+      ENTRYPOINT: /usr/bin/hello
+      IMAGE_REF: ghcr.io/nwarila/chiseled-hello:selftest
+      RUN_USER: "65532"
+      EXPECTED_OUTPUT: "hello from a chiseled image"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 1
           persist-credentials: false
-      - name: Reference build placeholder
+
+      - name: Compile static reference binary
         run: |
           set -euo pipefail
-          echo "TODO(iterate): call reusable-chiseled-image-build.yaml against examples/hello/"
-          echo "and assert the image is minimal + non-root + signed with valid SBOM/provenance."
+          cc -static -Os -o examples/hello/hello examples/hello/hello.c
+          file examples/hello/hello
+
+      - name: Install chisel (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          version="${CHISEL_VERSION}"
+          asset="chisel_v${version}_linux_amd64.tar.gz"
+          base="https://github.com/canonical/chisel/releases/download/v${version}"
+          workdir="$(mktemp -d)"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 \
+            -o "${workdir}/${asset}" "${base}/${asset}"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 \
+            -o "${workdir}/${asset}.sha384" "${base}/${asset}.sha384"
+          ( cd "${workdir}" && sha384sum --check --strict "${asset}.sha384" )
+          install_dir="${RUNNER_TEMP}/chisel-bin"
+          mkdir -p "${install_dir}"
+          tar -xzf "${workdir}/${asset}" -C "${install_dir}" chisel
+          chmod +x "${install_dir}/chisel"
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+          "${install_dir}/chisel" version
+          rm -rf "${workdir}"
+
+      - name: Cut chiseled rootfs
+        run: |
+          set -euo pipefail
+          # Slices mirror examples/hello/inputs.yaml exactly. The reference
+          # binary is statically linked, so no libc slice is needed at runtime.
+          mkdir -p rootfs
+          chisel cut --release "${CHISEL_RELEASE}" --root rootfs \
+            base-files_base ca-certificates_data
+          find rootfs -maxdepth 2 | sort
+
+      - name: Assemble OCI image (buildah FROM scratch)
+        run: |
+          set -euo pipefail
+          ctr="$(buildah from scratch)"
+          buildah copy "${ctr}" rootfs /
+          buildah copy --chmod 0755 "${ctr}" "${APP_ARTIFACT}" "${ENTRYPOINT}"
+          buildah config --user "${RUN_USER}" \
+            --entrypoint "[\"${ENTRYPOINT}\"]" "${ctr}"
+          buildah commit "${ctr}" "${IMAGE_REF}"
+
+      - name: Run image and assert output
+        run: |
+          set -euo pipefail
+          # podman is preinstalled on ubuntu-latest and reads buildah's local
+          # image store. Run the entrypoint and capture stdout.
+          actual="$(podman run --rm "${IMAGE_REF}")"
+          echo "image stdout: '${actual}'"
+          if [ "${actual}" != "${EXPECTED_OUTPUT}" ]; then
+            echo "::error::expected '${EXPECTED_OUTPUT}', got '${actual}'" >&2
+            exit 1
+          fi
+          echo "OK: image prints the expected line"
+
+      - name: Runtime-hardening checks
+        run: |
+          set -euo pipefail
+          fail=0
+          fail_msg() { echo "::error::$*" >&2; fail=1; }
+
+          effective_user="$(buildah inspect --type image \
+            --format '{{ .OCIv1.Config.User }}' "${IMAGE_REF}")"
+          echo "effective image USER: '${effective_user}'"
+          user_part="${effective_user%%:*}"
+          case "${user_part}" in
+            "" )       fail_msg "image USER is unset; refusing to default to root" ;;
+            0 | root ) fail_msg "image USER resolves to root (${effective_user})" ;;
+            * )        echo "OK: non-root USER (${effective_user})" ;;
+          esac
+
+          shell_hits="$(find rootfs \
+            \( -path 'rootfs/bin/sh' -o -path 'rootfs/bin/bash' \
+            -o -path 'rootfs/usr/bin/sh' -o -path 'rootfs/usr/bin/bash' \
+            -o -name 'busybox' -o -name 'dash' \) -print 2>/dev/null || true)"
+          if [ -n "${shell_hits}" ]; then
+            fail_msg "shell present in rootfs:"; echo "${shell_hits}" >&2
+          else
+            echo "OK: no shell in rootfs"
+          fi
+
+          pm_hits="$(find rootfs \
+            \( -name 'apt' -o -name 'apt-get' -o -name 'dpkg' \
+            -o -name 'dpkg-deb' -o -name 'rpm' -o -name 'apk' \) \
+            -print 2>/dev/null || true)"
+          if [ -n "${pm_hits}" ]; then
+            fail_msg "package manager present in rootfs:"; echo "${pm_hits}" >&2
+          else
+            echo "OK: distroless (no package manager) in rootfs"
+          fi
+
+          [ "${fail}" -eq 0 ] || { echo "::error::runtime-hardening checks failed" >&2; exit 1; }
+          echo "All runtime-hardening checks passed."
