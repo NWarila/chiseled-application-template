@@ -1,0 +1,143 @@
+# Chiseled Application Template Contract
+#
+# Machine-readable manifest for chiseled application-image repos consuming
+# NWarila/chiseled-application-template, plus the template repo's own
+# self-validation shape (`framework-template`). The universal section is local
+# to this contract and applies to both supported shapes.
+#
+# Rule philosophy:
+#   - Every required path maps to a load-bearing operational concern.
+#   - Every regex check enforces an invariant that, if violated, would
+#     degrade reproducibility, security, or supply-chain provenance.
+#   - Exceptions require an ADR or a documented rationale on the
+#     consuming PR.
+#
+# SCAFFOLD STATUS: the `consumer` content_rules below describe the intended
+# consumer surface. The reference build that exercises them end-to-end is wired
+# across follow-up iterate PRs.
+version: '2'
+universal:
+  required_root_files:
+  - path: README.md
+    rationale: Entry point; must describe usage and supply-chain controls.
+  - path: LICENSE
+    rationale: Repository license is non-optional.
+  - path: CODE_OF_CONDUCT.md
+    rationale: Local mirror of the org-owned code of conduct; drift-gated against NWarila/.github.
+  - path: CONTRIBUTING.md
+    rationale: Local mirror of the org-owned contribution guide; drift-gated against NWarila/.github.
+  - path: SECURITY.md
+    rationale: Local mirror of the org-owned security policy; drift-gated against NWarila/.github.
+  - path: SUPPORT.md
+    rationale: Local mirror of the org-owned support policy; drift-gated against NWarila/.github.
+  - path: .editorconfig
+    rationale: Baseline editor consistency.
+  - path: .gitignore
+    rationale: Excludes local state, credentials, caches, and build artifacts (deny-all per ADR-0003).
+  - path: .gitattributes
+    rationale: Repository text handling.
+  - path: .markdownlint-cli2.jsonc
+    rationale: Markdown lint configuration.
+  required_github_files:
+  - path: .github/CODEOWNERS
+    rationale: Ownership for high-risk paths.
+  - path: .github/PULL_REQUEST_TEMPLATE.md
+    rationale: Risk evidence and validation checklist.
+  - path: .github/renovate.json5
+    rationale: Dependency update policy aligned with org baseline.
+  - path: .github/workflows/drift-gate.yaml
+    rationale: 'Calls NWarila/drift-gate as a SHA-pinned composite action. Verifies the
+      consumer mirrors the org-baseline files (and the type-template baseline files,
+      when applicable) byte-identically against canonical.'
+  - path: .github/workflows/security.yaml
+    rationale: Calls the combined reusable security surface (IaC, CodeQL, Scorecard).
+  - path: .github/workflows/repo-hygiene.yaml
+    rationale: 'Calls the org reusable-repo-hygiene by SHA. Enforces SHA-pinned
+      uses: and pull_request_target safety - the policy guardrail that lets
+      auto-merge be a centralized reusable instead of a local copy.'
+  - path: .github/workflows/image.yaml
+    applies_to: [consumer]
+    rationale: Calls the reusable chiseled image build workflow with the consumer's app inputs.
+  required_documentation:
+  - path: docs/README.md
+  - path: docs/decision-records/
+    type: directory
+types:
+  consumer:
+    rationale: "Application-image consumer. Owns only its app inputs - Ubuntu/chisel\n\
+      release, slice list, application artifact, entrypoint, and image name - and\n\
+      calls the template's reusable build workflow by SHA. The build, packaging, and\n\
+      supply-chain evidence (SBOM, provenance, signing, hardening) are owned by the\n\
+      template, not the consumer.\n"
+    required_paths:
+    - path: .github/workflows/image.yaml
+      rationale: Build caller that delegates to the SHA-pinned reusable chiseled image build workflow.
+    content_rules:
+    - file: .github/workflows/image.yaml
+      pattern: '(?m)^\s*pull_request:\s*$'
+      must_match: true
+      rationale: Image build validation must run automatically on pull requests, not only by manual dispatch.
+    - file: .github/workflows/image.yaml
+      pattern: 'NWarila/chiseled-application-template/\.github/workflows/reusable-chiseled-image-build\.yaml@[0-9a-f]{40}'
+      must_match: true
+      rationale: Build callers must delegate to the SHA-pinned chiseled image build reusable from this template.
+    - file: .github/workflows/drift-gate.yaml
+      pattern: '(?m)^\s*source-repo:\s*NWarila/\.github\s*$'
+      must_match: true
+      rationale: Consumer drift gates must verify org-baseline mirrors from NWarila/.github.
+    - file: .github/workflows/security.yaml
+      pattern: 'NWarila/\.github/\.github/workflows/reusable-iac-security\.yaml@[0-9a-f]{40}'
+      must_match: true
+      rationale: Consumer security callers must consume the org-owned IaC reusable (NWarila/.github) by immutable SHA.
+    - file: .github/workflows/security.yaml
+      pattern: 'NWarila/\.github/\.github/workflows/reusable-codeql\.yaml@[0-9a-f]{40}'
+      must_match: true
+      rationale: Consumer security callers must consume the org-owned CodeQL reusable (NWarila/.github) by immutable SHA.
+    - file: .github/workflows/security.yaml
+      pattern: 'NWarila/\.github/\.github/workflows/reusable-scorecard\.yaml@[0-9a-f]{40}'
+      must_match: true
+      rationale: Consumer security callers must consume the org-owned Scorecard reusable (NWarila/.github) by immutable SHA.
+    - file: .github/workflows/repo-hygiene.yaml
+      pattern: 'NWarila/\.github/\.github/workflows/reusable-repo-hygiene\.yaml@[0-9a-f]{40}'
+      must_match: true
+      rationale: Repo-hygiene callers must consume the org-owned reusable-repo-hygiene (NWarila/.github) by immutable SHA.
+    forbidden_paths:
+    - glob: .github/workflows/reusable-*.yaml
+      rationale: 'Consumer repos own no local reusable workflows. Universal reusables
+        are called by SHA from NWarila/.github; the image build reusable is called
+        by SHA from this template.'
+    - glob: .github/workflows/reusable-*.yml
+      rationale: Local reusable workflow implementations are forbidden with either GitHub Actions extension.
+  framework-template:
+    rationale: 'Self-validation shape for this type-template repository. It owns the
+      reusable chiseled image build workflow, the consumer contract, drift-gate
+      metadata, and the supply-chain evidence pipeline that downstream consumers
+      inherit.
+
+      SCAFFOLD STATUS: required_paths reflects what this PR lands. The working
+      chisel cut build and full evidence wiring arrive across iterate PRs.'
+    required_paths:
+    - path: baseline-manifest.json
+      rationale: Template-tier drift-gate manifest consumed by downstream consumers.
+    - path: contract/chiseled-application-template-contract.yaml
+      rationale: Machine-readable consumer/template contract manifest.
+    - path: .github/workflows/ci.yaml
+      rationale: Self-validation workflow for this template repository.
+    - path: .github/workflows/repo-hygiene.yaml
+      rationale: Caller for the org reusable-repo-hygiene; enforces SHA-pinning and pull_request_target safety on this template repo.
+    - path: .github/workflows/reusable-chiseled-image-build.yaml
+      rationale: The type-specific reusable image build workflow consumers call.
+    - path: .github/workflows/reusable-release-evidence.yaml
+      rationale: Reusable release-evidence workflow consumed at release time.
+    - path: examples/
+      rationale: Credential-free reference app the template self-tests once the build is wired.
+      type: directory
+workflow_pinning:
+  enforce_sha_pin: true
+  allow_local_refs: true
+  allow_docker_digest: true
+  rationale: 'GitHub Actions are mutable: a tag like @v4 can be repointed by a
+    compromised maintainer. SHA pinning ensures the action that ran yesterday
+    is the action that runs today. Renovate keeps pins current.
+
+    '
