@@ -209,6 +209,11 @@ jobs:
         # packages: write (declared above), so it can push to any GHCR repo
         # under the workflow's owner. Gated on inputs.push so the local-only
         # reference build never touches the registry or needs credentials.
+        #
+        # Use `docker login` so the credential lands in ~/.docker/config.json:
+        # buildah reads that file too, and (critically) so do the Node-based
+        # attest-build-provenance action and cosign, which need registry
+        # credentials to push the attestation referrer and the signature.
         if: ${{ inputs.push }}
         env:
           GHCR_TOKEN: ${{ github.token }}
@@ -216,7 +221,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "${GHCR_TOKEN}" \
-            | buildah login --username "${GHCR_USER}" --password-stdin ghcr.io
+            | docker login ghcr.io --username "${GHCR_USER}" --password-stdin
 
       - name: Assemble OCI image
         id: build_image
