@@ -1,15 +1,15 @@
 # Reference build inputs for the `hello` example.
 #
 # This mirrors the input surface a consumer repo passes to
-# reusable-chiseled-image-build.yaml. The template's CI self-test will feed
-# these inputs once the build is wired (# TODO(iterate)).
+# reusable-chiseled-image-build.yaml. The template's CI self-test feeds these
+# inputs through the live build + evidence pipeline on every run.
 #
 # A statically linked `hello` needs almost nothing at runtime, so the slice set
 # is deliberately tiny - that is the whole point of chiseling.
 ubuntu_release: "24.04"
 chisel_release: "ubuntu-24.04"
 slices:
-  # base-files provides /etc and the filesystem skeleton.
+  # base-files provides /etc and the base filesystem layout.
   - base-files_base
   # ca-certificates data is a common, harmless slice to prove non-trivial cuts.
   - ca-certificates_data

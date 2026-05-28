@@ -59,7 +59,7 @@ The consumer surface (inputs + required caller workflows) is defined machine-rea
 ## Build engine and status
 
 - **Build engine:** Canonical `chisel cut` (upstream `chisel` binary + Ubuntu slice definitions) -> minimal rootfs -> OCI image.
-- **Status:** This repository currently lands the **complete standard scaffold + a documented skeleton reusable build workflow**. The working `chisel cut` build and full evidence wiring (SBOM, provenance, signing, hardening) are landing across follow-up *iterate* PRs and are marked in-source with `# TODO(iterate):`. See [`examples/hello/README.md`](examples/hello/README.md) for the credential-free reference build the template will self-test once the build is wired.
+- **Status:** Shipped and validated in CI. The reusable build workflow performs a real `chisel cut`, assembles the OCI image with buildah, and emits the full v1 supply-chain evidence bundle (SBOM via syft, SLSA build-provenance attestation, cosign keyless signature) plus runtime-hardening checks (non-root, no shell, distroless). CI self-tests exercise the live pipeline end to end: `reference image self-test` (credential-free local build), `evidence self-test (build + push + sign)`, and `evidence self-test (verify + cleanup)`. See [`examples/hello/README.md`](examples/hello/README.md) for the credential-free reference build the template self-tests on every run.
 
 ## Documentation
 

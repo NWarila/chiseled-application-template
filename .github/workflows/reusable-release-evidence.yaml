@@ -6,10 +6,13 @@ name: Reusable Release Evidence
 # the reusable build workflow consumers depend on, then attaches an SBOM and a
 # provenance attestation for the bundle itself.
 #
-# SCAFFOLD STATUS: per-image release evidence (signing the released image,
-# attaching the image SBOM/provenance) is produced by the reusable build
-# workflow at build time, not here. The image-tied evidence steps below are
-# marked `# TODO(iterate):` until the build is wired.
+# Scope: this workflow produces release-bundle evidence (the metadata + SHA
+# pins above, with their own SBOM and provenance attestation). Per-image
+# evidence (the image SBOM, build-provenance attestation, and cosign signature)
+# is produced by reusable-chiseled-image-build.yaml at build time, not here.
+# Folding the released image's digest/signature/SBOM into this release bundle is
+# tracked as a forward-looking refinement (see the TODO in "Generate template
+# evidence" below).
 
 on:
   workflow_call:

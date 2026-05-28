@@ -2,8 +2,11 @@ name: CI
 
 # Self-validation for chiseled-application-template. Runs the repo-quality
 # surface every derivative chiseled image repo inherits (actionlint,
-# markdownlint, workflow linting) and a placeholder for the reference image
-# build that lands once the chisel cut + evidence pipeline is wired.
+# markdownlint, workflow linting) and exercises the live build + evidence
+# pipeline end to end: the reference image build (reusable), the reference
+# image self-test (build + run + assert), and the evidence self-test
+# (build + push + sign, then verify + cleanup) over a real chisel cut, OCI
+# assembly, SBOM, provenance attestation, and cosign signature.
 
 on:
   push:
@@ -52,9 +55,9 @@ jobs:
 
   workflow-lint:
     name: workflow lint
-    # Lints the reusable build workflow and the YAML scaffold with yamllint, on
-    # top of actionlint above. The reusable workflow is the consumer-facing
-    # contract, so it gets an explicit gate of its own.
+    # Lints the reusable build workflow and the rest of the workflow YAML with
+    # yamllint, on top of actionlint above. The reusable workflow is the
+    # consumer-facing contract, so it gets an explicit gate of its own.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

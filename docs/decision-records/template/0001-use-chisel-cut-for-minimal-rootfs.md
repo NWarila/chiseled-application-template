@@ -80,8 +80,9 @@ result as an OCI image. Consumers supply the slice list and app inputs.
 
 ## Confirmation
 
-1. `reusable-chiseled-image-build.yaml` cuts the rootfs with `chisel cut`.
-   (# TODO(iterate): the real cut + checksum-pinned chisel install.)
+1. `reusable-chiseled-image-build.yaml` installs a checksum-verified pinned
+   `chisel` and cuts the rootfs with `chisel cut`; the CI self-tests exercise
+   this on every run.
 2. The slice list is a consumer-supplied input, not hard-coded.
 3. Runtime-hardening checks confirm the resulting image is distroless and
    shell-free.
@@ -117,8 +118,11 @@ None (current).
 
 ## Implementing PRs
 
-- Initial scaffold: documented skeleton reusable build workflow with the
-  `chisel cut` step marked `# TODO(iterate):`.
+- The initial repository structure established the reusable build workflow
+  shape.
+- The `chisel cut` build engine (checksum-pinned `chisel` install + cut +
+  buildah OCI assembly + runtime-hardening checks) was then implemented and is
+  validated by the CI self-tests.
 
 ## Related ADRs
 

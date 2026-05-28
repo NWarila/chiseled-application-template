@@ -50,9 +50,10 @@ What this document does not cover:
   the org `repo_hygiene` policy (run via `repo-hygiene.yaml`) enforces this, and
   Renovate keeps pins current.
 - **Spoofed chisel binary or slice definitions.** A malicious build tool or
-  tampered slice set is accepted silently. Mitigation (# TODO(iterate)): pin
-  `chisel` by exact release and verify its checksum before install; pin the
-  slice-definition release channel.
+  tampered slice set is accepted silently. Mitigation: `chisel` is pinned to an
+  exact release and its tarball is checksum-verified (sha384) before install,
+  and the slice-definition release channel is pinned via the `chisel_release`
+  input.
 
 ### Tampering
 

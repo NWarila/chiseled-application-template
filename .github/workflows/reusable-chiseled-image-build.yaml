@@ -5,10 +5,11 @@ name: Reusable Chiseled Image Build
 # (`chisel cut`) and emits v1 supply-chain evidence: SBOM, build provenance
 # attestation, cosign signature, and runtime-hardening checks.
 #
-# SCAFFOLD STATUS: this is a documented skeleton. The build engine and evidence
-# steps are wired across follow-up iterate PRs and are marked `# TODO(iterate):`
-# below. Until then each real step is a no-op placeholder that prints what it
-# will do, so the workflow parses, runs green, and documents the contract.
+# The build engine and evidence steps are fully wired: a checksum-verified
+# pinned `chisel cut`, buildah OCI assembly FROM scratch, a syft SBOM, a SLSA
+# build-provenance attestation, a cosign keyless signature, and runtime-
+# hardening checks. CI self-tests in ci.yaml exercise this workflow end to end
+# (reference build, evidence build + push + sign, and verify + cleanup).
 #
 # Consumers own only their app inputs (ubuntu/chisel release, slices, app
 # artifact, entrypoint, image name, push/sign toggles). The build, packaging,

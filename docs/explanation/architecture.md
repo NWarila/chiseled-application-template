@@ -1,8 +1,8 @@
 # Architecture
 
 `chiseled-application-template` is the canonical framework-template for Ubuntu
-Chiseled application-image repositories. It separates repo-quality scaffolding
-from the application-specific image build so consumer repos can supply only
+Chiseled application-image repositories. It separates the repo-quality
+boilerplate from the application-specific image build so consumer repos can supply only
 their app inputs while inheriting the same build, evidence, security, and
 documentation posture.
 
@@ -61,12 +61,15 @@ small:
 - **Runtime-hardening checks** - in-workflow assertions that fail the build if
   the image regresses to root, ships a shell, or stops being distroless.
 
-## Scaffold Status
+## Status
 
-This repository currently lands the complete standard scaffold plus a
-documented skeleton of the reusable build workflow. The working `chisel cut`
-build and the full evidence wiring arrive across follow-up *iterate* PRs and are
-marked in-source with `# TODO(iterate):`.
+The build engine and evidence pipeline are fully implemented and validated in
+CI. `reusable-chiseled-image-build.yaml` performs a checksum-verified pinned
+`chisel cut`, assembles the OCI image with buildah, and emits the SBOM,
+build-provenance attestation, and cosign signature alongside the runtime-
+hardening checks. The CI self-tests (`reference image self-test` and the
+`evidence self-test` build/verify jobs) exercise the live pipeline end to end on
+every run.
 
 ## External Dependencies
 
