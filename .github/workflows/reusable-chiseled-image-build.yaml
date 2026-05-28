@@ -1,0 +1,233 @@
+name: Reusable Chiseled Image Build
+
+# Type-specific reusable workflow that consumer application-image repos call by
+# SHA. It builds a minimal OCI image from an Ubuntu Chiseled rootfs
+# (`chisel cut`) and emits v1 supply-chain evidence: SBOM, build provenance
+# attestation, cosign signature, and runtime-hardening checks.
+#
+# SCAFFOLD STATUS: this is a documented skeleton. The build engine and evidence
+# steps are wired across follow-up iterate PRs and are marked `# TODO(iterate):`
+# below. Until then each real step is a no-op placeholder that prints what it
+# will do, so the workflow parses, runs green, and documents the contract.
+#
+# Consumers own only their app inputs (ubuntu/chisel release, slices, app
+# artifact, entrypoint, image name, push/sign toggles). The build, packaging,
+# and evidence pipeline lives here so every chiseled image in the fleet is built
+# and proven the same way.
+
+on:
+  workflow_call:
+    inputs:
+      ubuntu_release:
+        description: Ubuntu release the image targets, e.g. "24.04".
+        required: false
+        type: string
+        default: "24.04"
+      chisel_release:
+        description: |
+          Chisel release / slice-definition channel to cut from, e.g.
+          "ubuntu-24.04". Selects which Ubuntu slice definitions chisel uses.
+        required: false
+        type: string
+        default: "ubuntu-24.04"
+      slices:
+        description: |
+          Newline-separated list of Ubuntu slices to cut into the rootfs, e.g.
+          "ca-certificates_data" / "libc6_libs". These are the only packages
+          that ship in the image.
+        required: true
+        type: string
+      app_artifact:
+        description: |
+          Path (within the caller checkout) to the application artifact to layer
+          on top of the chiseled rootfs, e.g. a statically linked binary.
+        required: false
+        type: string
+        default: ""
+      entrypoint:
+        description: Absolute in-image path to set as the OCI entrypoint.
+        required: false
+        type: string
+        default: ""
+      image_name:
+        description: |
+          Fully-qualified image name (without tag), e.g.
+          "ghcr.io/nwarila-platform/myapp".
+        required: true
+        type: string
+      image_tag:
+        description: Tag to apply to the built image. Defaults to the caller SHA.
+        required: false
+        type: string
+        default: ""
+      run_user:
+        description: |
+          Non-root UID the image runs as. The runtime-hardening check fails the
+          build if the effective user resolves to root (0).
+        required: false
+        type: string
+        default: "65532"
+      push:
+        description: Push the image to its registry after build.
+        required: false
+        type: boolean
+        default: false
+      sign:
+        description: Sign the pushed image digest with cosign (keyless / OIDC).
+        required: false
+        type: boolean
+        default: false
+
+    outputs:
+      image_digest:
+        description: The built image digest (sha256:...) once the build is wired.
+        value: ${{ jobs.build.outputs.image_digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: chiseled-image / build + evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Provenance attestation + cosign keyless signing need an OIDC token.
+      id-token: write
+      attestations: write
+      # Pushing the image to GHCR needs packages: write (gated by inputs.push).
+      packages: write
+    outputs:
+      image_digest: ${{ steps.build_image.outputs.image_digest }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out caller repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve build parameters
+        id: params
+        env:
+          IMAGE_NAME: ${{ inputs.image_name }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          FALLBACK_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag="${IMAGE_TAG:-$FALLBACK_TAG}"
+          echo "image_ref=${IMAGE_NAME}:${tag}" >> "${GITHUB_OUTPUT}"
+          echo "Building image ref: ${IMAGE_NAME}:${tag}"
+
+      - name: Install chisel (pinned)
+        env:
+          # TODO(iterate): pin chisel by exact release + verify checksum, then
+          # install. renovate: datasource=github-releases depName=canonical/chisel
+          CHISEL_VERSION: "1.0.0"
+        run: |
+          set -euo pipefail
+          # TODO(iterate): download canonical/chisel ${CHISEL_VERSION} for
+          # linux_amd64, verify its SHA256 against the published checksums, and
+          # install to /usr/local/bin/chisel. For now this is a documented
+          # placeholder so the workflow parses and runs.
+          echo "TODO(iterate): install chisel ${CHISEL_VERSION} (checksum-verified)"
+
+      - name: Cut chiseled rootfs
+        env:
+          CHISEL_RELEASE: ${{ inputs.chisel_release }}
+          SLICES: ${{ inputs.slices }}
+        run: |
+          set -euo pipefail
+          # TODO(iterate): run the real cut, e.g.
+          #   mkdir -p rootfs
+          #   readarray -t slice_args <<< "${SLICES}"
+          #   chisel cut --release "${CHISEL_RELEASE}" --root rootfs "${slice_args[@]}"
+          echo "TODO(iterate): chisel cut --release ${CHISEL_RELEASE} --root rootfs <slices>"
+          echo "slices requested:"
+          printf '%s\n' "${SLICES}"
+
+      - name: Assemble OCI image
+        id: build_image
+        env:
+          IMAGE_REF: ${{ steps.params.outputs.image_ref }}
+          APP_ARTIFACT: ${{ inputs.app_artifact }}
+          ENTRYPOINT: ${{ inputs.entrypoint }}
+          RUN_USER: ${{ inputs.run_user }}
+        run: |
+          set -euo pipefail
+          # TODO(iterate): assemble the OCI image from the chiseled rootfs.
+          # Preferred path is buildah building FROM scratch over rootfs/:
+          #   ctr=$(buildah from scratch)
+          #   buildah copy "$ctr" rootfs /
+          #   [ -n "${APP_ARTIFACT}" ] && buildah copy "$ctr" "${APP_ARTIFACT}" "${ENTRYPOINT}"
+          #   buildah config --user "${RUN_USER}" --entrypoint "${ENTRYPOINT}" "$ctr"
+          #   buildah commit "$ctr" "${IMAGE_REF}"
+          # (A `docker build` FROM scratch over the rootfs is an alternative.)
+          # Set the real digest output once the build is wired:
+          echo "TODO(iterate): build ${IMAGE_REF} FROM scratch over chiseled rootfs as user ${RUN_USER}"
+          echo "image_digest=" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate SBOM (syft)
+        # TODO(iterate): point syft at the assembled image and emit an SPDX SBOM
+        # alongside the image. This action is SHA-pinned. The guard below is the
+        # empty digest the placeholder build emits, so this real step stays
+        # dormant until steps.build_image produces a digest.
+        if: ${{ steps.build_image.outputs.image_digest != '' }}
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: ${{ steps.params.outputs.image_ref }}
+          format: spdx-json
+          output-file: image.spdx.json
+          upload-artifact: false
+
+      - name: SBOM placeholder
+        run: 'echo "TODO(iterate): generate SBOM (syft) for the assembled image"'
+
+      - name: Attest build provenance
+        # TODO(iterate): attest the real image digest. Requires id-token: write
+        # and attestations: write (declared above). Dormant until the build
+        # emits a digest.
+        if: ${{ steps.build_image.outputs.image_digest != '' }}
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-name: ${{ inputs.image_name }}
+          subject-digest: ${{ steps.build_image.outputs.image_digest }}
+          push-to-registry: ${{ inputs.push }}
+
+      - name: Provenance placeholder
+        run: 'echo "TODO(iterate): attest build provenance for the image digest"'
+
+      - name: Install cosign (pinned)
+        # TODO(iterate): wire the sign step below to use cosign. Installer is
+        # SHA-pinned; Renovate manages the pin. Only runs when signing a pushed
+        # image is requested.
+        if: ${{ inputs.sign && inputs.push }}
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      - name: Sign image (cosign keyless)
+        if: ${{ inputs.sign && inputs.push }}
+        env:
+          IMAGE_DIGEST: ${{ steps.build_image.outputs.image_digest }}
+        run: |
+          set -euo pipefail
+          # TODO(iterate): cosign sign --yes "${IMAGE_DIGEST}" using keyless
+          # OIDC (Fulcio/Rekor). Requires id-token: write.
+          echo "TODO(iterate): cosign sign (keyless) ${IMAGE_DIGEST:-<digest>}"
+
+      - name: Runtime-hardening checks
+        env:
+          IMAGE_REF: ${{ steps.params.outputs.image_ref }}
+          RUN_USER: ${{ inputs.run_user }}
+        run: |
+          set -euo pipefail
+          # TODO(iterate): assert the image is hardened and FAIL the build if not:
+          #   - effective USER is non-root (config User != "" and != "0"/"root")
+          #   - no shell present in the rootfs (no /bin/sh, /bin/bash, busybox)
+          #   - distroless: no apt/dpkg/package manager, no /etc/passwd login shells
+          # Inspect via `buildah inspect` / `crane config` over the image config
+          # and a file listing of the chiseled rootfs.
+          echo "TODO(iterate): assert non-root (user=${RUN_USER}), no-shell, distroless; fail build on regression"

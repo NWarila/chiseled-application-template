@@ -1,0 +1,146 @@
+name: Reusable Release Evidence
+
+# Generates and attaches a uniform evidence bundle to every release of this
+# chiseled-application framework-template (and any consumer that opts to reuse
+# it). The bundle captures the template's release metadata and the SHA pins of
+# the reusable build workflow consumers depend on, then attaches an SBOM and a
+# provenance attestation for the bundle itself.
+#
+# SCAFFOLD STATUS: per-image release evidence (signing the released image,
+# attaching the image SBOM/provenance) is produced by the reusable build
+# workflow at build time, not here. The image-tied evidence steps below are
+# marked `# TODO(iterate):` until the build is wired.
+
+on:
+  workflow_call:
+    inputs:
+      repo_type:
+        description: |
+          Explicit repo type for release evidence:
+          "framework-template" (this repo's self-evidence) or "consumer".
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  evidence:
+    name: Build release evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository at release SHA
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate repo type
+        id: type
+        env:
+          REPO_TYPE: ${{ inputs.repo_type }}
+        run: |
+          set -euo pipefail
+          t="${REPO_TYPE}"
+          case "$t" in
+            framework-template|consumer) ;;
+            *)
+              echo "::error::unknown repo type '$t' (expected framework-template or consumer)"
+              exit 1
+              ;;
+          esac
+          echo "type=$t" >> "$GITHUB_OUTPUT"
+          echo "repo type: $t"
+
+      - name: Generate template evidence
+        env:
+          OUT: release-evidence
+          REPO_TYPE: ${{ steps.type.outputs.type }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"/{workflows,docs}
+          echo "${REPO_TYPE}" > "$OUT/repo-type.txt"
+
+          # Capture the SHA pins consumers depend on: the reusable build
+          # workflow's own action pins and the org-reusable callers.
+          workflow_files=()
+          if [ -d .github/workflows ]; then
+            while IFS= read -r -d '' file; do
+              workflow_files+=( "$file" )
+            done < <(find .github/workflows -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) -print0)
+          fi
+
+          if ((${#workflow_files[@]})); then
+            grep -EH 'uses:\s*[^@]+@[0-9a-f]{40}' "${workflow_files[@]}" \
+              > "$OUT/workflows/action-pins.txt" || echo "no SHA-pinned uses: found" > "$OUT/workflows/action-pins.txt"
+          else
+            echo "no workflow files found" > "$OUT/workflows/action-pins.txt"
+          fi
+
+          if [ -f docs/decision-records/README.md ]; then
+            cp docs/decision-records/README.md "$OUT/docs/decision-records-index.md"
+          fi
+
+          # TODO(iterate): for image releases, also capture the released image
+          # digest, its cosign signature reference, and the image SBOM produced
+          # by reusable-chiseled-image-build.yaml.
+
+          {
+            echo "release_sha=${GITHUB_SHA}"
+            echo "release_ref=${GITHUB_REF}"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "run_id=${GITHUB_RUN_ID}"
+          } > "$OUT/metadata.txt"
+
+      - name: Bundle evidence
+        run: tar -czf release-evidence.tar.gz release-evidence/
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: release-evidence
+          format: spdx-json
+          output-file: release-evidence.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Attest release evidence provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: release-evidence.tar.gz
+
+      - name: Attest release evidence SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: release-evidence.tar.gz
+          sbom-path: release-evidence.spdx.json
+
+      - name: Upload to workflow run
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-evidence
+          path: |
+            release-evidence.tar.gz
+            release-evidence.spdx.json
+          if-no-files-found: error
+
+      - name: Attach to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAG}" ] || [[ "${TAG}" == refs/* ]]; then
+            echo "::warning::no release tag in context (TAG='${TAG}'); skipping release upload."
+            exit 0
+          fi
+          gh release upload "${TAG}" release-evidence.tar.gz release-evidence.spdx.json
