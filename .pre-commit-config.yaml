@@ -41,27 +41,6 @@ repos:
 
   - repo: local
     hooks:
-      - id: packer-fmt
-        name: packer fmt
-        entry: packer fmt -recursive packer examples
-        language: system
-        pass_filenames: false
-        files: ^(packer|examples)/.*\.(pkr|pkrvars|pkrtpl)\.hcl$
-
-      - id: packer-docs
-        name: packer docs
-        entry: python tools/gen_packer_docs.py
-        language: system
-        pass_filenames: false
-        files: ^packer/variables\.pkr\.hcl$|^docs/reference/packer\.md$|^tools/gen_packer_docs\.py$
-
-      - id: packer-plugin-provenance
-        name: packer plugin provenance
-        entry: python tools/check_packer_plugin_provenance.py
-        language: system
-        pass_filenames: false
-        files: ^packer/packer\.pkr\.hcl$|^packer/plugin-provenance\.json$|^tools/check_packer_plugin_provenance\.py$
-
       - id: docs-layout
         name: docs layout
         entry: python tools/check_docs_layout.py
