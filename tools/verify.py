@@ -438,6 +438,33 @@ def check_markdown_links() -> None:
     require(not findings, "broken local markdown links found:\n" + "\n".join(findings))
 
 
+WORKFLOW_REF = re.compile(r"(?<![\w/.-])\.github/workflows/([A-Za-z0-9._-]+\.ya?ml)")
+
+
+def check_doc_workflow_refs() -> None:
+    """Every local .github/workflows/*.yaml path cited in a reference doc must
+    resolve to a tracked workflow file, so a documented gate cannot become a
+    phantom when a workflow is renamed or removed. Cross-repo NWarila/.github
+    reusable references are intentionally excluded (the lookbehind rejects a
+    preceding path segment)."""
+    workflows_dir = ROOT / ".github/workflows"
+    findings: list[str] = []
+    for path in sorted((ROOT / "docs/reference").rglob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            for match in WORKFLOW_REF.finditer(line):
+                name = match.group(1)
+                if not (workflows_dir / name).is_file():
+                    findings.append(
+                        f"{path.relative_to(ROOT)}:{line_no}: references missing "
+                        f"workflow .github/workflows/{name}"
+                    )
+    require(
+        not findings,
+        "reference docs cite workflows that do not exist:\n" + "\n".join(findings),
+    )
+
+
 TARGETS = {
     "docs-layout": check_docs_layout,
     "manifest": check_manifest,
@@ -450,6 +477,7 @@ TARGETS = {
     "template-reusables": check_template_reusables,
     "stale-placeholders": check_stale_placeholders,
     "markdown-links": check_markdown_links,
+    "doc-workflow-refs": check_doc_workflow_refs,
 }
 
 GROUPS = {
@@ -465,6 +493,7 @@ GROUPS = {
         "template-reusables",
         "stale-placeholders",
         "markdown-links",
+        "doc-workflow-refs",
     ],
     "verify": [
         "docs-layout",
@@ -478,6 +507,7 @@ GROUPS = {
         "template-reusables",
         "stale-placeholders",
         "markdown-links",
+        "doc-workflow-refs",
     ],
 }
 
