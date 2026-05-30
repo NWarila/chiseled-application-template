@@ -64,7 +64,7 @@ first edits are:
 | [`tools/build_image.sh`](tools/build_image.sh) | Build the image from a manifest plus the rendered build args. |
 | [`tools/verify_app_shas.py`](tools/verify_app_shas.py) | Verify built application binaries match the manifest's SHA256 values. |
 | [`docs/`](docs/) | Diataxis documentation plus derivation, publishing, governance, and org/template/repo ADR scopes. |
-| [`.github/workflows/`](.github/workflows/) | `ci.yaml` runs the contract checks and calls the image-build reusable; `codeql.yaml`, `scorecard.yaml`, and `security.yaml` call the canonical reusable workflows in `NWarila/.github` for CodeQL, OpenSSF Scorecard, and Trivy + Gitleaks + zizmor. `auto-merge.yaml` calls the local trusted-bot reusable so the privileged `pull_request_target` call graph stays reviewable in this repo. |
+| [`.github/workflows/`](.github/workflows/) | `ci.yaml` runs the contract checks and calls the image-build reusable; `codeql.yaml`, `scorecard.yaml`, and `security.yaml` call the canonical reusable workflows in `NWarila/.github` for CodeQL, OpenSSF Scorecard, and Trivy + Gitleaks + zizmor. |
 | [`.github/workflows/reusable-chisel-image-build.yaml`](.github/workflows/reusable-chisel-image-build.yaml) | Template-specific reusable: build app binaries → verify SHA256 → build Chiseled image → run runtime hardening. Downstream repos call it (`uses: NWarila/chiseled-application-template/.github/workflows/reusable-chisel-image-build.yaml@<sha>`) instead of copying the pipeline. |
 
 ## What This Is, And What It Is Not

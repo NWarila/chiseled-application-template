@@ -111,14 +111,24 @@ jobs:
         run: bash tools/build_app.sh
 
       - name: Verify built application SHA256 matches manifest
-        run: python tools/verify_app_shas.py "${{ inputs.manifest_path }}"
+        env:
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+        run: python tools/verify_app_shas.py "${MANIFEST_PATH}"
 
       - name: Build chiseled image
-        run: bash tools/build_image.sh "${{ inputs.manifest_path }}" "${{ inputs.image_tag }}" "${{ inputs.platform }}"
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          MANIFEST_PATH: ${{ inputs.manifest_path }}
+          PLATFORM: ${{ inputs.platform }}
+        run: bash tools/build_image.sh "${MANIFEST_PATH}" "${IMAGE_TAG}" "${PLATFORM}"
 
       - name: Run runtime hardening assertions
-        run: bash tests/runtime-hardening.sh "${{ inputs.image_tag }}"
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: bash tests/runtime-hardening.sh "${IMAGE_TAG}"
 
       - name: Smoke run the built image
         if: ${{ inputs.run_smoke_test }}
-        run: docker run --rm "${{ inputs.image_tag }}"
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: docker run --rm "${IMAGE_TAG}"

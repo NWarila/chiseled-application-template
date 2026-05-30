@@ -314,10 +314,8 @@ def check_stale_placeholders() -> None:
     require(not findings, "stale placeholders found:\n" + "\n".join(findings))
 
 
-# Universal quality-gate caller workflows. Non-privileged callers use reusable
-# workflows hosted in NWarila/.github and pinned by 40-char SHA. Auto-merge is
-# deliberately local because it runs under pull_request_target and the complete
-# privileged call graph must stay visible to this repo's static checks.
+# Universal quality-gate caller workflows use reusable workflows hosted in
+# NWarila/.github and pinned by 40-char SHA.
 ORG_REUSABLE_CALLER_WORKFLOWS = {
     "codeql.yaml": "reusable-codeql.yaml",
     "scorecard.yaml": "reusable-scorecard.yaml",
@@ -332,32 +330,6 @@ REUSABLE_USES_PATTERN = re.compile(
 def check_security_workflows() -> None:
     workflows_dir = ROOT / ".github/workflows"
     require(workflows_dir.is_dir(), "missing .github/workflows directory")
-
-    auto_merge = workflows_dir / "auto-merge.yaml"
-    require(auto_merge.is_file(), "missing universal quality-gate caller: .github/workflows/auto-merge.yaml")
-    auto_merge_text = auto_merge.read_text(encoding="utf-8")
-    require(
-        "uses: ./.github/workflows/reusable-auto-merge.yaml" in auto_merge_text,
-        ".github/workflows/auto-merge.yaml must call the local reusable-auto-merge.yaml",
-    )
-    local_reusable = workflows_dir / "reusable-auto-merge.yaml"
-    require(
-        local_reusable.is_file(),
-        "missing local privileged reusable: .github/workflows/reusable-auto-merge.yaml",
-    )
-    local_reusable_text = local_reusable.read_text(encoding="utf-8")
-    forbidden_fragments = [
-        "actions/checkout@",
-        "github.event.pull_request.head",
-        "gh pr checkout",
-        "git checkout",
-        "git fetch",
-    ]
-    for fragment in forbidden_fragments:
-        require(
-            fragment not in local_reusable_text,
-            f".github/workflows/reusable-auto-merge.yaml must not read PR-controlled content: {fragment}",
-        )
 
     for filename, reusable in ORG_REUSABLE_CALLER_WORKFLOWS.items():
         path = workflows_dir / filename
