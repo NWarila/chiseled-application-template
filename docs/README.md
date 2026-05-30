@@ -1,13 +1,11 @@
 # Documentation
 
-This repo follows the Diataxis documentation layout:
+Documentation for this template follows the Diataxis framework.
 
-- `tutorials/` - learning-oriented walkthroughs (added as the build pipeline lands).
-- `how-to/` - operational tasks for maintaining the template (added as needed).
-- `reference/` - command surface and invariants (added as needed).
-- `explanation/` - architecture and threat model for the chiseled image pattern.
-- `decision-records/` - org, template, and repo ADRs.
-
-The reusable build workflow lives at
-[`../.github/workflows/reusable-chiseled-image-build.yaml`](../.github/workflows/reusable-chiseled-image-build.yaml),
-and the credential-free reference build under [`../examples/`](../examples/).
+| Quadrant | Path | Purpose |
+| --- | --- | --- |
+| Explanation | [`explanation/`](explanation/) | Architecture, threat model, testing strategy |
+| Reference | [`reference/`](reference/) | Image contract, invariants, evidence, governance, quality gates ([governance](reference/governance.md)) |
+| How-to | [`how-to/`](how-to/) | Task-oriented build, derivation, and publish guides ([derive-image-repo](how-to/derive-image-repo.md), [build-image](how-to/build-image.md), [publish-image](how-to/publish-image.md)) |
+| Tutorials | [`tutorials/`](tutorials/) | Reserved for future learning-oriented walkthroughs |
+| Decisions | [`decision-records/`](decision-records/) | ADRs in org, template, and repo scopes |

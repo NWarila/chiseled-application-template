@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "image": {
+    "name": "chiseled-application-template-example",
+    "ubuntu_series": "24.04",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ]
+  },
+  "builder": {
+    "image": "ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b"
+  },
+  "chisel": {
+    "cli": {
+      "version": "v1.4.1",
+      "sha384": {
+        "amd64": "e3f8c1a8461848d6c2f051f1edd07a9446349f69d1cce40a5a58bb4d7b58eaf10e2ae94de320254a2fca55095d9753db",
+        "arm64": "e2f09056be917965530ad750c263211578ef4d48fe2561325f788774ae253a66b29c31a9ea1bd93a024639f57c263c12"
+      }
+    },
+    "release": {
+      "repository": "https://github.com/canonical/chisel-releases.git",
+      "commit": "f42d76490045602d83de8afef5126987179a6693",
+      "path": "."
+    },
+    "slices": [
+      "base-files_base",
+      "base-files_release-info"
+    ]
+  },
+  "application": {
+    "source": "go-binary",
+    "binary_path": "/usr/local/bin/app",
+    "artifacts": [
+      {
+        "platform": "linux/amd64",
+        "path": "dist/app-amd64",
+        "sha256": "2d5193c968129cffd5a94fb141099a8a20fb9008ff00f74af0d8829f7c118216"
+      },
+      {
+        "platform": "linux/arm64",
+        "path": "dist/app-arm64",
+        "sha256": "f3dbc0a2cbc2dbb991b6fabf19504f9cabdce42f6fd3a1527e367840fae4b148"
+      }
+    ],
+    "verification": {
+      "type": "none"
+    }
+  },
+  "runtime": {
+    "user": "65532:65532",
+    "entrypoint": [
+      "/usr/local/bin/app"
+    ],
+    "forbidden_executables": [
+      "/bin/sh",
+      "/bin/bash",
+      "/usr/bin/apt",
+      "/usr/bin/apt-get",
+      "/usr/bin/curl",
+      "/usr/bin/wget"
+    ]
+  },
+  "evidence": {
+    "required": [
+      "buildkit-sbom",
+      "buildkit-provenance",
+      "github-artifact-attestation",
+      "cosign-signature",
+      "runtime-hardening"
+    ]
+  }
+}

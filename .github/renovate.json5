@@ -1,10 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
 
-  // Renovate config for NWarila/chiseled-application-template. It keeps GitHub
-  // Actions, pre-commit hooks, and the SHA-pinned body inputs that track
-  // reusable-workflow and drift-gate baseline refs current through reviewable
-  // PRs.
+  // Renovate config for NWarila/chiseled-application-template. Keep Actions
+  // pinned by digest and surface Chisel-related pins for review in downstreams.
   "extends": [
     "config:recommended",
     ":dependencyDashboard",
@@ -20,36 +18,35 @@
 
   "enabledManagers": [
     "github-actions",
-    "pre-commit",
     "custom.regex"
   ],
 
   "customManagers": [
     {
-      // Track tool version pins carried in `# renovate:`-annotated env vars in
-      // workflows (e.g. chisel, cosign, syft versions) so build-engine pins
-      // move through reviewed PRs.
       "customType": "regex",
       "managerFilePatterns": [
-        "/^\\.github/workflows/.*\\.ya?ml$/"
+        "/^\\.github/workflows/.*\\.ya?ml$/",
+        "/^docs/.*\\.md$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?)(?: packageName=(?<packageName>[^\\s]+?))?(?: extractVersion=(?<extractVersion>[^\\s]+?))?(?: versioning=(?<versioning>[^\\s]+?))?\\s+\\w+(?:_VERSION)?:\\s*\"(?<currentValue>[^\"]+)\""
+        "# renovate: datasource=(?<datasource>[a-zA-Z0-9-._]+?) depName=(?<depName>[^\\s]+?)(?: extractVersion=(?<extractVersion>[^\\s]+?))?(?: versioning=(?<versioning>[^\\s]+?))?\\s+\\w+(?:_VERSION)?:\\s*\"(?<currentValue>[^\"]+)\""
       ]
     },
     {
-      // Track SHA body inputs that must move with reusable workflow pins and
-      // drift-gate baseline refs. Renovate's git-refs datasource treats the
-      // branch name as currentValue and the checked-in 40-char SHA as
-      // currentDigest.
       "customType": "regex",
       "managerFilePatterns": [
+        "/^Makefile$/",
+        "/^tools/build_app\\.sh$/",
         "/^\\.github/workflows/.*\\.ya?ml$/"
       ],
-      "datasourceTemplate": "git-refs",
-      "versioningTemplate": "loose",
       "matchStrings": [
-        "# renovate: depName=(?<depName>[^\\s]+) packageName=(?<packageName>[^\\s]+) currentValue=(?<currentValue>[^\\s]+)\\s+(?:template_ref|framework_ref|source-ref):\\s*(?<currentDigest>[0-9a-f]{40})"
+        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[^\\s]+))?\\s+GO_IMAGE\\s*\\?=\\s*golang:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})",
+        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[^\\s]+))?\\s+GO_IMAGE=\"\\$\\{GO_IMAGE:-golang:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\\}\"",
+        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[^\\s]+))?\\s+GO_IMAGE:\\s*golang:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})",
+        // reusable-chisel-image-build.yaml carries the canonical default Go
+        // builder pin as a workflow_call input default; match its `default:`
+        // form so Renovate bumps the reusable alongside Makefile/build_app.sh.
+        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[^\\s]+))?\\s+default:\\s*\"golang:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
       ]
     }
   ],
@@ -62,9 +59,22 @@
       "semanticCommitScope": "deps"
     },
     {
-      "matchDepNames": ["actions/upload-artifact"],
-      "groupName": "actions/upload-artifact",
+      "matchDepNames": ["actions/checkout"],
+      "groupName": "actions/checkout",
       "semanticCommitType": "ci",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "matchDepNames": ["actions/setup-python"],
+      "groupName": "actions/setup-python",
+      "semanticCommitType": "ci",
+      "semanticCommitScope": "deps"
+    },
+    {
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["golang"],
+      "groupName": "golang build image",
+      "semanticCommitType": "deps",
       "semanticCommitScope": "deps"
     }
   ]

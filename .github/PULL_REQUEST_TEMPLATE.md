@@ -4,11 +4,11 @@
 
 ## Risk
 
-<!-- What could break? What did you test? Reference any incident drills. -->
+<!-- What could break? What did you test? Reference image/runtime impact when applicable. -->
 
 ## Test plan
 
-- [ ] Self-CI passes locally / in PR
-- [ ] If touching universal-layer files: confirm baseline-manifest.json is intentionally updated
-- [ ] If touching reusable workflows: confirm direct caller workflows still exercise them
-- [ ] Documentation reflects the change (when applicable)
+- [ ] `python tools/verify.py ci` passes locally or in PR
+- [ ] If touching `containers/Dockerfile`: manifest pins and runtime assertions were reviewed
+- [ ] If touching release/build behavior: SBOM, provenance, signing, and attestation evidence are updated
+- [ ] Documentation reflects the change

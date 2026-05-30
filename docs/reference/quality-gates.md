@@ -1,0 +1,35 @@
+# Quality Gates
+
+These checks are only merge-blocking when the repository rulesets require their
+reported status names. See [`governance.md`](governance.md) for the repository
+settings that make the gates enforceable.
+
+| Gate | Source | Role | Notes |
+| --- | --- | --- | --- |
+| Template verify | `python tools/verify.py ci` | Blocking | Checks docs layout, manifest contract, Dockerfile markers, runtime script coverage, Go builder image pinning, build-args generator, local build-helper boundaries, security caller workflows, the template reusable workflow, stale placeholders, and local Markdown links. |
+| actionlint | `.github/workflows/ci.yaml` | Blocking | Validates workflow syntax and common GitHub Actions mistakes. |
+| markdownlint | `.github/workflows/ci.yaml` | Blocking | Keeps docs readable across the template. |
+| Image build + hardening | `.github/workflows/reusable-chisel-image-build.yaml` | Blocking | Template-specific reusable: builds application binaries, verifies their SHA256 against the manifest (`tools/verify_app_shas.py`), builds the Chiseled image (`tools/build_image.sh`), and runs runtime hardening (`tests/runtime-hardening.sh`). `ci.yaml` calls it against the example manifest for `linux/amd64`; downstream repos call it against their real manifest. |
+| Runtime hardening | `tests/runtime-hardening.sh <image>` | Blocking (CI) / Downstream blocking | Runs (via the reusable above) against the freshly built example image in CI and against the downstream image in derived repositories. |
+| CodeQL | `.github/workflows/codeql.yaml` | Blocking | Calls `NWarila/.github/.github/workflows/reusable-codeql.yaml`. Scans `actions`, `python`, and `go` because the template ships executable code under `.github/workflows/`, `tools/`, and `app/`. |
+| Trivy + Gitleaks + zizmor | `.github/workflows/security.yaml` | Blocking | Calls `NWarila/.github/.github/workflows/reusable-iac-security.yaml`. Trivy filesystem misconfig + secret scanning (HIGH/CRITICAL), Gitleaks full-history secret detection, zizmor GitHub Actions security analysis. SARIF uploaded to the Security tab. |
+| OpenSSF Scorecard | `.github/workflows/scorecard.yaml` | Blocking | Calls `NWarila/.github/.github/workflows/reusable-scorecard.yaml`. Repo-level supply-chain posture (branch protection, code review, pinned dependencies, signed releases, vulnerabilities). |
+| Auto-merge for trusted bots | `.github/workflows/auto-merge.yaml` | Advisory | Calls the local `.github/workflows/reusable-auto-merge.yaml` mirror so the privileged `pull_request_target` call graph is reviewable in this repo. Enables GitHub auto-merge on Renovate and Dependabot PRs once required checks pass. Human-authored PRs are never auto-merged. |
+| BuildKit SBOM/provenance | Downstream release workflow | Release | Should be emitted on the pushed image digest with `--sbom=true` and `--provenance=mode=max`. Local `--load` builds do not preserve attestations. |
+| GitHub artifact attestations | Downstream release workflow | Release | Should attest image digest and SBOM. See [`publish-image.md`](../how-to/publish-image.md) for a drop-in workflow. |
+| Cosign signature | Downstream release workflow | Release | Should sign the image digest, preferably with identity-bound keyless signing or managed keys. See [`publish-image.md`](../how-to/publish-image.md) for keyless OIDC example. |
+
+## What Is Intentionally Not In This Template CI
+
+- Pushing the example image to a registry or emitting release attestations: the
+  template does not own a publish destination. Downstream repositories add
+  `--push` and registry credentials.
+- Cosign signing and GitHub artifact attestation upload: those are bound to a
+  publish destination as well.
+- Multi-architecture runtime hardening: the example image is built and tested
+  for `linux/amd64` only; the manifest declares both `linux/amd64` and
+  `linux/arm64` and the build args support both, but cross-platform runtime
+  assertions need QEMU and add CI time without changing the contract.
+- Application vulnerability scanning: downstream repos own application inputs.
+
+Add those gates when deriving a concrete image repository.

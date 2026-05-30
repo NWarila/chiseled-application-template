@@ -1,1 +1,4 @@
+# Downstream repositories must replace this with a user or team that has write
+# access in the generated repository. Organization logins are not valid
+# CODEOWNERS owners by themselves.
 * @NWarila
