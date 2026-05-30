@@ -116,9 +116,26 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["source", "binary_path", "artifacts", "verification"],
+      "allOf": [
+        {
+          "if": {
+            "required": ["source"],
+            "properties": { "source": { "const": "vendor-release-binary" } }
+          },
+          "then": { "required": ["name", "version"] }
+        }
+      ],
       "properties": {
         "source": {
           "enum": ["go-binary", "vendor-release-binary", "static-binary", "other"]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
         },
         "binary_path": {
           "type": "string",

@@ -154,6 +154,13 @@ def validate_manifest(manifest: dict[str, Any], *, template: bool) -> None:
         application["source"] in {"go-binary", "vendor-release-binary", "static-binary", "other"},
         "application.source has unsupported value",
     )
+    if application["source"] == "vendor-release-binary":
+        # Vendor releases are fetched by name + version (for example to build
+        # the upstream SHA256SUMS filename), so a manifest that omits them must
+        # fail here at contract-validation time rather than later in the build.
+        require_keys(application, {"name", "version"}, "application (vendor-release-binary)")
+        require(bool(application["name"]), "application.name must be non-empty for vendor-release-binary")
+        require(bool(application["version"]), "application.version must be non-empty for vendor-release-binary")
     require(application["binary_path"].startswith("/"), "application.binary_path must be absolute")
     require(isinstance(application["artifacts"], list) and application["artifacts"], "application.artifacts must be non-empty")
     artifact_platforms = set()
