@@ -43,6 +43,10 @@ ADR_HEADINGS = [
     "## Compliance Notes",
 ]
 
+# Org ADRs every consumer must mirror (ADR-0001..0005); all five are required
+# here. Byte-identity against the org source is enforced separately by drift-gate.
+EXPECTED_ORG_ADRS = {"0001", "0002", "0003", "0004", "0005"}
+
 
 class VerifyError(Exception):
     """Raised when a verification target fails."""
@@ -84,7 +88,13 @@ def check_docs_layout() -> None:
         require((ROOT / document).is_file(), f"missing required documentation: {document}")
 
     org_adrs = sorted((ROOT / "docs/decision-records/org").glob("[0-9][0-9][0-9][0-9]-*.md"))
-    require(len(org_adrs) >= 4, "expected mirrored org ADRs under docs/decision-records/org")
+    present_org_adrs = {adr.name[:4] for adr in org_adrs}
+    missing_org_adrs = sorted(EXPECTED_ORG_ADRS - present_org_adrs)
+    require(
+        not missing_org_adrs,
+        "missing mirrored org ADRs under docs/decision-records/org: "
+        + ", ".join(missing_org_adrs),
+    )
 
     for adr in (ROOT / "docs/decision-records/template").glob("[0-9][0-9][0-9][0-9]-*.md"):
         text = adr.read_text(encoding="utf-8")
