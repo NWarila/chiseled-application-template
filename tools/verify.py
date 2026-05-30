@@ -330,6 +330,7 @@ ORG_REUSABLE_CALLER_WORKFLOWS = {
     "codeql.yaml": "reusable-codeql.yaml",
     "scorecard.yaml": "reusable-scorecard.yaml",
     "security.yaml": "reusable-iac-security.yaml",
+    "auto-merge.yaml": "reusable-auto-merge.yaml",
 }
 
 REUSABLE_USES_PATTERN = re.compile(
