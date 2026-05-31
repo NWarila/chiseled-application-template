@@ -331,6 +331,7 @@ ORG_REUSABLE_CALLER_WORKFLOWS = {
     "scorecard.yaml": "reusable-scorecard.yaml",
     "security.yaml": "reusable-iac-security.yaml",
     "auto-merge.yaml": "reusable-auto-merge.yaml",
+    "repo-hygiene.yaml": "reusable-repo-hygiene.yaml",
 }
 
 REUSABLE_USES_PATTERN = re.compile(
@@ -356,6 +357,17 @@ def check_security_workflows() -> None:
             match.group("reusable") == reusable,
             f".github/workflows/{filename} must call {reusable} (found {match.group('reusable')})",
         )
+        if filename == "repo-hygiene.yaml":
+            source_ref = re.search(r"^\s+source_ref:\s*([0-9a-f]{40})\s*$", text, flags=re.MULTILINE)
+            require(
+                source_ref is not None,
+                ".github/workflows/repo-hygiene.yaml must set source_ref to a 40-char SHA",
+            )
+            assert source_ref is not None
+            require(
+                source_ref.group(1) == match.group("sha"),
+                ".github/workflows/repo-hygiene.yaml source_ref must match the reusable uses SHA",
+            )
 
     # The chiseled-application-template carries Python (under tools/) and Go
     # (under app/) source the default CodeQL languages list ("actions") would
